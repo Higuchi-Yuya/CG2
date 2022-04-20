@@ -256,8 +256,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         {+0.5f,-0.5f,0.0f},//右下
     };
 
+    XMFLOAT3 vertices2[] = {
+       {-0.5f,-0.5f,0.0f},//左下
+       {+0.5f,+0.5f,0.0f},//右上
+       {+0.5f,-0.5f,0.0f},//右下
+    };
+
     //頂点データ全体のサイズ＝頂点データ一つ分のサイズ＊頂点データの要素数
     UINT sizeVB = static_cast<UINT>(sizeof(XMFLOAT3) * _countof(vertices));
+    UINT sizeVB2 = static_cast<UINT>(sizeof(XMFLOAT3) * _countof(vertices2));
 
     //頂点バッファの設定
     D3D12_HEAP_PROPERTIES heapProp{};  //ヒープ設定
@@ -285,7 +292,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     assert(SUCCEEDED(result));
 
-    //GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得
+
+    //GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得....1
     XMFLOAT3* vertMap = nullptr;
     result = vertBuff->Map(0, nullptr, (void**)&vertMap);
     assert(SUCCEEDED(result));
@@ -293,6 +301,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     //全頂点に対して
     for (int i = 0; i < _countof(vertices); i++) {
         vertMap[i] = vertices[i];  //座標をコピー
+    }
+
+    //GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得....2
+    XMFLOAT3* vertMap2 = nullptr;
+    result = vertBuff->Map(0, nullptr, (void**)&vertMap2);
+    assert(SUCCEEDED(result));
+
+    //全頂点に対して
+    for (int i = 0; i < _countof(vertices2); i++) {
+        vertMap2[i] = vertices2[i];  //座標をコピー
     }
 
     //繋がりを解除
@@ -367,6 +385,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     }, // (1行で書いたほうが見やすい)
     };
 
+
+#pragma region グラフィックパイプライン設定
     // グラフィックスパイプライン設定
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineDesc{};
 
@@ -399,6 +419,48 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     pipelineDesc.NumRenderTargets = 1; // 描画対象は1つ
     pipelineDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // 0~255指定のRGBA
     pipelineDesc.SampleDesc.Count = 1; // 1ピクセルにつき1回サンプリング
+#pragma endregion
+
+#pragma region グラフィックパイプライン設定２
+    
+        // グラフィックスパイプライン設定
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineDesc2{};
+
+        // シェーダーの設定
+        pipelineDesc2.VS.pShaderBytecode = vsBlob->GetBufferPointer();
+        pipelineDesc2.VS.BytecodeLength = vsBlob->GetBufferSize();
+        pipelineDesc2.PS.pShaderBytecode = psBlob->GetBufferPointer();
+        pipelineDesc2.PS.BytecodeLength = psBlob->GetBufferSize();
+
+        // サンプルマスクの設定
+        pipelineDesc2.SampleMask = D3D12_DEFAULT_SAMPLE_MASK; // 標準設定
+
+        // ラスタライザの設定
+        pipelineDesc2.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; // カリングしない
+        pipelineDesc2.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME; // ポリゴン内塗りつぶし
+        pipelineDesc2.RasterizerState.DepthClipEnable = true; // 深度クリッピングを有効に
+
+        // ブレンドステート
+        pipelineDesc2.BlendState.RenderTarget[0].RenderTargetWriteMask
+            = D3D12_COLOR_WRITE_ENABLE_ALL; // RBGA全てのチャンネルを描画
+
+        // 頂点レイアウトの設定
+        pipelineDesc2.InputLayout.pInputElementDescs = inputLayout;
+        pipelineDesc2.InputLayout.NumElements = _countof(inputLayout);
+
+        // 図形の形状設定
+        pipelineDesc2.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
+        // その他の設定
+        pipelineDesc2.NumRenderTargets = 1; // 描画対象は1つ
+        pipelineDesc2.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // 0~255指定のRGBA
+        pipelineDesc2.SampleDesc.Count = 1; // 1ピクセルにつき1回サンプリング
+    
+#pragma endregion
+
+#pragma endregion
+
+
 
     // ルートシグネチャ
     ID3D12RootSignature* rootSignature;
@@ -460,9 +522,47 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         rtvHandle.ptr += bbIndex * device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
         commandList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
 
+        //キーボード情報の取得開始
+        keyboard->Acquire();
+
+        //全キーの入力状態を取得する
+        BYTE key[256] = {};
+        keyboard->GetDeviceState(sizeof(key), key);
+
+        //数字の０キーが押されていたら
+        if (key[DIK_0])
+        {
+            OutputDebugStringA("Hit 0\n"); //出力ウィンドウに「Hit　０」と表示
+        }
+
+
+
         //３．画面クリア
         FLOAT clearColor[] = { 0.1f,0.25f,0.5f,0.0f };//青っぽい色
+
+
+        if (key[DIK_SPACE]) //スペースキーが押されていたら
+        {
+            //画面クリアカラー数値を書き換える
+            clearColor[0] = { 1.0f };
+            clearColor[1] = { 0.078f };
+            clearColor[2] = { 0.576f };
+            clearColor[3] = { 0.0f };
+        }
+
         commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+
+        if (key[DIK_1]) //1キーが押されていたら
+        {
+            vertices[3] = { +0.5f,+0.5f,0.0f };
+        }
+
+        if (key[DIK_2]) //2キーが押されていたら
+        {
+            pipelineDesc = pipelineDesc2;
+        }
+
 
         //４．描画コマンドここから
 #pragma region 描画コマンド
@@ -470,16 +570,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         // ビューポート設定コマンド
         D3D12_VIEWPORT viewport{};
-        viewport.Width = window_width;   //横幅
-        viewport.Height = window_height; //縦幅
+        viewport.Width = 800;   //横幅
+        viewport.Height = 600; //縦幅
         viewport.TopLeftX = 0;           //左上X
         viewport.TopLeftY = 0;           //左上Y
         viewport.MinDepth = 0.0f;        //最小深度（０でよい）
         viewport.MaxDepth = 1.0f;        //最大深度（１でよい）
 
-        // ビューポート設定コマンドを、コマンドリストに積む
-        commandList->RSSetViewports(1, &viewport);
+        D3D12_VIEWPORT viewport2{};
+        viewport2.Width = 200;   //横幅
+        viewport2.Height = 600; //縦幅
+        viewport2.TopLeftX = 800;           //左上X
+        viewport2.TopLeftY = 0;           //左上Y
+        viewport2.MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport2.MaxDepth = 1.0f;
 
+        D3D12_VIEWPORT viewport3{};
+        viewport3.Width = 800;   //横幅
+        viewport3.Height = 120; //縦幅
+        viewport3.TopLeftX = 0;           //左上X
+        viewport3.TopLeftY = 600;           //左上Y
+        viewport3.MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport3.MaxDepth = 1.0f;
+
+        D3D12_VIEWPORT viewport4{};
+        viewport4.Width = 200;   //横幅
+        viewport4.Height = 120; //縦幅
+        viewport4.TopLeftX = 800;           //左上X
+        viewport4.TopLeftY = 600;           //左上Y
+        viewport4.MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport4.MaxDepth = 1.0f;
+
+       
         // シザー矩形
         D3D12_RECT scissorRect{};
         scissorRect.left = 0;                                 // 切り抜き座標左
@@ -499,9 +621,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         // 頂点バッファビューの設定コマンド
         commandList->IASetVertexBuffers(0, 1, &vbView);
 
-        // 描画コマンド
-        commandList->DrawInstanced(_countof(vertices), 1, 0, 0); // 全ての頂点を使って描画
 
+      
+
+        
+       
+
+        // 描画コマンド
+        // ビューポート設定コマンドを、コマンドリストに積む, 全ての頂点を使って描画
+        commandList->RSSetViewports(1, &viewport);
+        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
+        commandList->DrawInstanced(_countof(vertices2), 1, 0, 0);
+        commandList->RSSetViewports(1, &viewport2);
+        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
+        commandList->RSSetViewports(1, &viewport3);
+        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
+        commandList->RSSetViewports(1, &viewport4);
+        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
 
 #pragma endregion
         //４．描画コマンドここまで
@@ -539,23 +675,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         result = commandList->Reset(cmdAllocator, nullptr);
         assert(SUCCEEDED(result));
 
-        //キーボード情報の取得開始
-        keyboard->Acquire();
-
-        //全キーの入力状態を取得する
-        BYTE key[256] = {};
-        keyboard->GetDeviceState(sizeof(key), key);
-
-        //数字の０キーが押されていたら
-        if (key[DIK_0])
-        {
-            OutputDebugStringA("Hit 0\n"); //出力ウィンドウに「Hit　０」と表示
-        }
-
-        if (key[DIK_SPACE]) //スペースキーが押されていたら
-        {
-            //画面クリアカラー数値を書き換える
-        }
+     
         //DirectX毎フレーム処理　ここまで---------------------------------//
 
     }
