@@ -444,6 +444,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         //DirectX毎フレーム処理　ここから---------------------------------//
 
+        //キーボード情報の取得開始
+        keyboard->Acquire();
+
+        //全キーの入力状態を取得する
+        BYTE key[256] = {};
+        keyboard->GetDeviceState(sizeof(key), key);
+
         //バックバッファの番号を取得（二つなのでゼロ番か一番）
         UINT bbIndex = swapChain->GetCurrentBackBufferIndex();
 
@@ -462,6 +469,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         //３．画面クリア
         FLOAT clearColor[] = { 0.1f,0.25f,0.5f,0.0f };//青っぽい色
+        if (key[DIK_SPACE]) //スペースキーが押されていたら
+        {
+            clearColor[0] = { 1.0f };
+            clearColor[1] = { 0.078f };
+            clearColor[2] = { 0.502f };
+            clearColor[3] = { 0.0f };
+        }
         commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
         //４．描画コマンドここから
@@ -470,7 +484,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         // ビューポート設定コマンド
         D3D12_VIEWPORT viewport{};
-        viewport.Width = window_width;   //横幅
+        viewport.Width = window_width/2;   //横幅
         viewport.Height = window_height; //縦幅
         viewport.TopLeftX = 0;           //左上X
         viewport.TopLeftY = 0;           //左上Y
@@ -483,8 +497,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         // シザー矩形
         D3D12_RECT scissorRect{};
         scissorRect.left = 0;                                 // 切り抜き座標左
-        scissorRect.right = scissorRect.left + window_width;  // 切り抜き座標右
-        scissorRect.top = 0;                                  // 切り抜き座標上
+        scissorRect.right = scissorRect.left + window_width/4;  // 切り抜き座標右
+        scissorRect.top = window_height/2;                         // 切り抜き座標上
         scissorRect.bottom = scissorRect.top + window_height; // 切り抜き座標下
         // シザー矩形設定コマンドを、コマンドリストに積む
         commandList->RSSetScissorRects(1, &scissorRect);
@@ -539,12 +553,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         result = commandList->Reset(cmdAllocator, nullptr);
         assert(SUCCEEDED(result));
 
-        //キーボード情報の取得開始
-        keyboard->Acquire();
-
-        //全キーの入力状態を取得する
-        BYTE key[256] = {};
-        keyboard->GetDeviceState(sizeof(key), key);
+        
 
         //数字の０キーが押されていたら
         if (key[DIK_0])
@@ -552,10 +561,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             OutputDebugStringA("Hit 0\n"); //出力ウィンドウに「Hit　０」と表示
         }
 
-        if (key[DIK_SPACE]) //スペースキーが押されていたら
-        {
-            //画面クリアカラー数値を書き換える
-        }
+        
         //DirectX毎フレーム処理　ここまで---------------------------------//
 
     }
