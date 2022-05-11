@@ -257,14 +257,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     };
 
     XMFLOAT3 vertices2[] = {
-       {-0.5f,-0.5f,0.0f},//左下
+       {-0.5f,+0.5f,0.0f},//左下
        {+0.5f,+0.5f,0.0f},//右上
        {+0.5f,-0.5f,0.0f},//右下
     };
 
     //頂点データ全体のサイズ＝頂点データ一つ分のサイズ＊頂点データの要素数
     UINT sizeVB = static_cast<UINT>(sizeof(XMFLOAT3) * _countof(vertices));
-    UINT sizeVB2 = static_cast<UINT>(sizeof(XMFLOAT3) * _countof(vertices2));
+    
 
     //頂点バッファの設定
     D3D12_HEAP_PROPERTIES heapProp{};  //ヒープ設定
@@ -292,6 +292,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     assert(SUCCEEDED(result));
 
+    ID3D12Resource* vertBuff2 = nullptr;
+
+    result = device->CreateCommittedResource(
+        &heapProp,
+        D3D12_HEAP_FLAG_NONE,
+        &resDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&vertBuff2));
+
+    assert(SUCCEEDED(result));
+
 
     //GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得....1
     XMFLOAT3* vertMap = nullptr;
@@ -305,7 +317,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     //GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得....2
     XMFLOAT3* vertMap2 = nullptr;
-    result = vertBuff->Map(0, nullptr, (void**)&vertMap2);
+    result = vertBuff2->Map(0, nullptr, (void**)&vertMap2);
     assert(SUCCEEDED(result));
 
     //全頂点に対して
@@ -316,6 +328,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     //繋がりを解除
     vertBuff->Unmap(0, nullptr);
 
+    //繋がりを解除
+    vertBuff2->Unmap(0, nullptr);
+
     //頂点バッファビューの作成
     D3D12_VERTEX_BUFFER_VIEW vbView{};
     //GPU仮想アドレス
@@ -324,6 +339,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     vbView.SizeInBytes = sizeVB;
     //頂点一つ分のデータサイズ
     vbView.StrideInBytes = sizeof(XMFLOAT3);
+
+    //頂点バッファビューの作成
+    D3D12_VERTEX_BUFFER_VIEW vbView2{};
+    //GPU仮想アドレス
+    vbView2.BufferLocation = vertBuff2->GetGPUVirtualAddress();
+    //頂点バッファのサイズ
+    vbView2.SizeInBytes = sizeVB;
+    //頂点一つ分のデータサイズ
+    vbView2.StrideInBytes = sizeof(XMFLOAT3);
 
     ID3DBlob* vsBlob = nullptr; // 頂点シェーダオブジェクト
     ID3DBlob* psBlob = nullptr; // ピクセルシェーダオブジェクト
@@ -478,11 +502,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     rootSigBlob->Release();
     // パイプラインにルートシグネチャをセット
     pipelineDesc.pRootSignature = rootSignature;
+    pipelineDesc2.pRootSignature = rootSignature;
 
     // パイプランステートの生成
     ID3D12PipelineState* pipelineState = nullptr;
     result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&pipelineState));
     assert(SUCCEEDED(result));
+
+    // パイプランステートの生成
+    ID3D12PipelineState* pipelineState2 = nullptr;
+    result = device->CreateGraphicsPipelineState(&pipelineDesc2, IID_PPV_ARGS(&pipelineState2));
+    assert(SUCCEEDED(result));
+
+    // ゲーム内用変数宣言
+    bool rectangle_flag = 0;
+    bool wire_frame_flag = 0;
+    BYTE key[256] = {};
+    BYTE oldkey[256] = {};
+
+
 
 
 
@@ -526,7 +564,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         keyboard->Acquire();
 
         //全キーの入力状態を取得する
-        BYTE key[256] = {};
+        
+        // 最新のキーボード情報だったものは1フレーム前のキーボード情報として保存
+        for (int i = 0; i < 256; i++)
+        {
+            oldkey[i] = key[i];
+        }
+
         keyboard->GetDeviceState(sizeof(key), key);
 
         //数字の０キーが押されていたら
@@ -534,8 +578,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         {
             OutputDebugStringA("Hit 0\n"); //出力ウィンドウに「Hit　０」と表示
         }
-
-
 
         //３．画面クリア
         FLOAT clearColor[] = { 0.1f,0.25f,0.5f,0.0f };//青っぽい色
@@ -553,15 +595,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
 
-        if (key[DIK_1]) //1キーが押されていたら
-        {
-            vertices[3] = { +0.5f,+0.5f,0.0f };
-        }
+        
 
-        if (key[DIK_2]) //2キーが押されていたら
-        {
-            pipelineDesc = pipelineDesc2;
-        }
+      
 
 
         //４．描画コマンドここから
@@ -569,37 +605,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 
         // ビューポート設定コマンド
-        D3D12_VIEWPORT viewport{};
-        viewport.Width = 800;   //横幅
-        viewport.Height = 600; //縦幅
-        viewport.TopLeftX = 0;           //左上X
-        viewport.TopLeftY = 0;           //左上Y
-        viewport.MinDepth = 0.0f;        //最小深度（０でよい）
-        viewport.MaxDepth = 1.0f;        //最大深度（１でよい）
+        D3D12_VIEWPORT viewport[4]{};
+        viewport[0].Width = 800;   //横幅
+        viewport[0].Height = 600; //縦幅
+        viewport[0].TopLeftX = 0;           //左上X
+        viewport[0].TopLeftY = 0;           //左上Y
+        viewport[0].MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport[0].MaxDepth = 1.0f;        //最大深度（１でよい）
 
-        D3D12_VIEWPORT viewport2{};
-        viewport2.Width = 200;   //横幅
-        viewport2.Height = 600; //縦幅
-        viewport2.TopLeftX = 800;           //左上X
-        viewport2.TopLeftY = 0;           //左上Y
-        viewport2.MinDepth = 0.0f;        //最小深度（０でよい）
-        viewport2.MaxDepth = 1.0f;
+       
+        viewport[1].Width = 200;   //横幅
+        viewport[1].Height = 600; //縦幅
+        viewport[1].TopLeftX = 800;           //左上X
+        viewport[1].TopLeftY = 0;           //左上Y
+        viewport[1].MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport[1].MaxDepth = 1.0f;
 
-        D3D12_VIEWPORT viewport3{};
-        viewport3.Width = 800;   //横幅
-        viewport3.Height = 120; //縦幅
-        viewport3.TopLeftX = 0;           //左上X
-        viewport3.TopLeftY = 600;           //左上Y
-        viewport3.MinDepth = 0.0f;        //最小深度（０でよい）
-        viewport3.MaxDepth = 1.0f;
 
-        D3D12_VIEWPORT viewport4{};
-        viewport4.Width = 200;   //横幅
-        viewport4.Height = 120; //縦幅
-        viewport4.TopLeftX = 800;           //左上X
-        viewport4.TopLeftY = 600;           //左上Y
-        viewport4.MinDepth = 0.0f;        //最小深度（０でよい）
-        viewport4.MaxDepth = 1.0f;
+        viewport[2].Width = 800;   //横幅
+        viewport[2].Height = 120; //縦幅
+        viewport[2].TopLeftX = 0;           //左上X
+        viewport[2].TopLeftY = 600;           //左上Y
+        viewport[2].MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport[2].MaxDepth = 1.0f;
+
+
+        viewport[3].Width = 200;   //横幅
+        viewport[3].Height = 120; //縦幅
+        viewport[3].TopLeftX = 800;           //左上X
+        viewport[3].TopLeftY = 600;           //左上Y
+        viewport[3].MinDepth = 0.0f;        //最小深度（０でよい）
+        viewport[3].MaxDepth = 1.0f;
 
        
         // シザー矩形
@@ -612,7 +648,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         commandList->RSSetScissorRects(1, &scissorRect);
 
         // パイプラインステートとルートシグネチャの設定コマンド
-        commandList->SetPipelineState(pipelineState);
+        if (key[DIK_2] && !oldkey[DIK_2]) //2キーが押されていたら
+        {
+            if (wire_frame_flag == false)
+            {
+                wire_frame_flag = true;
+            }
+            else
+            {
+                wire_frame_flag = false;
+            }
+
+        }
+        if (wire_frame_flag == true)
+        {
+            commandList->SetPipelineState(pipelineState2);
+
+        }
+        else
+        {
+            commandList->SetPipelineState(pipelineState);
+        }
         commandList->SetGraphicsRootSignature(rootSignature);
 
         // プリミティブ形状の設定コマンド
@@ -620,25 +676,42 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         // 頂点バッファビューの設定コマンド
         commandList->IASetVertexBuffers(0, 1, &vbView);
-
-
-      
-
         
        
 
         // 描画コマンド
         // ビューポート設定コマンドを、コマンドリストに積む, 全ての頂点を使って描画
-        commandList->RSSetViewports(1, &viewport);
-        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
-        commandList->DrawInstanced(_countof(vertices2), 1, 0, 0);
-        commandList->RSSetViewports(1, &viewport2);
-        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
-        commandList->RSSetViewports(1, &viewport3);
-        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
-        commandList->RSSetViewports(1, &viewport4);
-        commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
+        for (int i = 0; i < _countof(viewport); i++)
+        {
+            commandList->RSSetViewports(1, &viewport[i]);
+            commandList->DrawInstanced(_countof(vertices), 1, 0, 0);
+        }
 
+
+        if (key[DIK_1] && !oldkey[DIK_1]) //1キーが押されていたら
+        {
+            if (rectangle_flag == false)
+            {
+                rectangle_flag = true;
+            }
+            else
+            {
+                rectangle_flag = false;
+            }
+        }
+
+        if (rectangle_flag == true)
+        {
+            commandList->IASetVertexBuffers(0, 1, &vbView2);
+
+            for (int i = 0; i < _countof(viewport); i++)
+            {
+                commandList->RSSetViewports(1, &viewport[i]);
+                commandList->DrawInstanced(_countof(vertices2), 1, 0, 0);
+            }
+        }
+
+   
 #pragma endregion
         //４．描画コマンドここまで
 
