@@ -7,6 +7,8 @@
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 
+#include "Affine_trans.h"
+
 //#define DIRECTINPUT_VERSION 0x0800
 #include <dinput.h>
 
@@ -43,6 +45,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     //ウィンドウサイズ
     const int window_width = 1280; //横幅
     const int window_height = 720; //縦幅
+
+    double PI = 3.14;
 
     //ウィンドウクラスの設定
     WNDCLASSEX w{};
@@ -266,6 +270,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         0,1,2,//三角形一つ目
         1,2,3,//三角形二つ目
     };
+
+    float affin[3][3] = {
+      {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f} };
+
+
+    float transformX = 0.0f;
+    float transformY = 0.0f;
+    float scale_x = 1.0, scale_y = 1.0;
+
+    float rotation = 0.0f;
+    float scale = 1.0f;
+
+    Affine_trans* affine = nullptr;
+
     //インデックスデータ全体のサイズ
     UINT sizeIB = static_cast<UINT>(sizeof(uint16_t) * _countof(indices));
 
@@ -287,12 +305,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
 
-
-
-
-   
-
-
     //頂点バッファの生成
     ID3D12Resource* vertBuff = nullptr;
 
@@ -310,11 +322,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     XMFLOAT3* vertMap = nullptr;
     result = vertBuff->Map(0, nullptr, (void**)&vertMap);
     assert(SUCCEEDED(result));
-
-    //全頂点に対して
-    for (int i = 0; i < _countof(vertices); i++) {
-        vertMap[i] = vertices[i];  //座標をコピー
-    }
+    
+    ////全頂点に対して
+    //for (int i = 0; i < _countof(vertices); i++) {
+    //    vertMap[i] = vertices[i];  //座標をコピー
+    //}
 
     //繋がりを解除
     vertBuff->Unmap(0, nullptr);
@@ -331,6 +343,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     ID3DBlob* vsBlob = nullptr; // 頂点シェーダオブジェクト
     ID3DBlob* psBlob = nullptr; // ピクセルシェーダオブジェクト
     ID3DBlob* errorBlob = nullptr; // エラーオブジェクト
+
     // 頂点シェーダの読み込みとコンパイル
     result = D3DCompileFromFile(
         L"BasicVS.hlsl", // シェーダファイル名
@@ -519,13 +532,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     result = constBuffMaterial->Map(0, nullptr, (void**)&constMapMaterial);
     assert(SUCCEEDED(result));
 
-
-
     //値を書き込むと自動的に転送される
     constMapMaterial->color = XMFLOAT4(1, 0, 0, 0.5f);
 
-    //リソース設定
 
+
+    //リソース設定
     resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     resDesc.Width = sizeIB; //頂点データ全体のサイズ
     resDesc.Height = 1;
@@ -548,11 +560,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     //インデックスバッファをマッピング
     uint16_t* indexMap = nullptr;
     result = indexBuff->Map(0, nullptr, (void**)&indexMap);
+
     //全インデックスに対して
     for (int i = 0; i < _countof(indices); i++)
     {
         indexMap[i] = indices[i]; //インデックスをコピー
     }
+
     //マッピング解除
     indexBuff->Unmap(0, nullptr);
 
@@ -615,6 +629,98 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             clearColor[3] = { 0.0f };
         }
         commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+
+#pragma region 更新処理
+
+        transformX = +0.05f;
+        transformY = +0.05f;
+        
+        rotation = 0.0f;
+        scale = 1.0f;
+        scale_x = 1.0, scale_y = 1.0;
+        if (key[DIK_W]){
+            for (int i = 0; i < _countof(vertices); i++) {
+                
+                affine->translation(vertices[i], 0, transformY, 0);
+            }
+        }
+        
+        if (key[DIK_S]) {
+            for (int i = 0; i < _countof(vertices); i++) {
+
+                affine->translation(vertices[i], 0, -transformY, 0);
+            }
+        }
+
+        if (key[DIK_A]) {
+            for (int i = 0; i < _countof(vertices); i++) {
+
+                affine->translation(vertices[i], -transformX, 0, 0);
+            }
+        }
+
+        if (key[DIK_D]) {
+            for (int i = 0; i < _countof(vertices); i++) {
+
+                affine->translation(vertices[i], transformX, 0, 0);
+            }
+        }
+
+        if (key[DIK_Q]) {
+            scale_x += 0.01;
+            scale_y += 0.01;
+            for (int i = 0; i < _countof(vertices); i++) {
+
+                affine->scale(vertices[i], vertices[3], scale_x, scale_y, 1);
+            }
+        }
+
+        if (key[DIK_E]) {
+            scale_x -= 0.01;
+            scale_y -= 0.01;
+            for (int i = 0; i < _countof(vertices); i++) {
+
+                affine->scale(vertices[i], vertices[3], scale_x, scale_y, 1);
+            }
+        }
+
+        if (key[DIK_R])
+        {
+            rotation -= PI / 32;
+        }
+
+        if (key[DIK_T]) {
+            rotation += PI / 32;
+        }
+
+        // アフィン行列の生成
+        affin[0][0] = scale * cos(rotation);
+        affin[0][1] = scale * (-sin(rotation));
+        affin[0][2] = 0;
+
+        affin[1][0] = scale * sin(rotation);
+        affin[1][1] = scale * cos(rotation);
+        affin[1][2] = 0;
+
+        affin[2][0] = 0.0f;
+        affin[2][1] = 0.0f;
+        affin[2][2] = 1.0f;
+
+        for (int i = 0; i < _countof(vertices); i++) {
+            vertices[i].x = vertices[i].x * affin[0][0] +
+                vertices[i].y * affin[0][1] + 1.0f * affin[0][2];
+            vertices[i].y = vertices[i].x * affin[1][0] +
+                vertices[i].y * affin[1][1] + 1.0f * affin[1][2];
+            vertices[i].z = vertices[i].x * affin[2][0] +
+                vertices[i].y * affin[2][1] + 1.0f * affin[2][2];
+        }
+
+        //全頂点に対して
+        for (int i = 0; i < _countof(vertices); i++) {
+            vertMap[i] = vertices[i];  //座標をコピー
+        }
+#pragma endregion 
 
         //４．描画コマンドここから
 #pragma region 描画コマンド
@@ -707,6 +813,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             OutputDebugStringA("Hit 0\n"); //出力ウィンドウに「Hit　０」と表示
         }
 
+        //
         
         //DirectX毎フレーム処理　ここまで---------------------------------//
 
